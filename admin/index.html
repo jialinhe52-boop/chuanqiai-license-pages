@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>传奇AI 授权后台</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #eef3f9;
+        --panel: #ffffff;
+        --panel-soft: #f6f8fb;
+        --line: #dce4ee;
+        --line-soft: #edf1f5;
+        --text: #111827;
+        --muted: #64748b;
+        --navy: #111b31;
+        --blue: #2563eb;
+        --blue-dark: #1d4ed8;
+        --green: #16834a;
+        --green-bg: #eaf8ef;
+        --amber: #a45c05;
+        --amber-bg: #fff5da;
+        --red: #dc2626;
+        --red-bg: #fff0f1;
+        --radius: 8px;
+      }
+
+      * { box-sizing: border-box; letter-spacing: 0; }
+      body {
+        margin: 0;
+        min-width: 320px;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+        font-size: 14px;
+      }
+      button, input, select, textarea { font: inherit; }
+      button { cursor: pointer; }
+      button:disabled { cursor: not-allowed; opacity: .55; }
+      .app { width: min(1500px, 100%); margin: 0 auto; padding: 10px 14px 20px; }
+      .topbar {
+        min-height: 96px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 18px 22px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+      .brand h1 { margin: 0; font-size: 25px; line-height: 1.3; font-weight: 800; }
+      .brand p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+      .auth { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: min(510px, 100%); }
+      .auth input { max-width: 260px; }
+      .login-state {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 10px;
+        border-radius: 999px;
+        background: #f1f5f9;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .login-state.online { background: var(--green-bg); color: var(--green); }
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(330px, 385px) minmax(0, 1fr);
+        align-items: start;
+        gap: 14px;
+        margin-top: 14px;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+      .form-panel { padding: 17px; }
+      .panel-heading { margin-bottom: 14px; }
+      .panel-heading h2 { margin: 0; font-size: 16px; line-height: 1.4; }
+      .panel-heading p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+      .field { display: grid; gap: 6px; margin-top: 12px; }
+      .field > span { color: #53647a; font-size: 12px; font-weight: 700; }
+      .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      input, select, textarea {
+        width: 100%;
+        min-height: 38px;
+        border: 1px solid #d7e0eb;
+        border-radius: 7px;
+        outline: none;
+        background: #fff;
+        color: var(--text);
+        padding: 8px 10px;
+        transition: border-color .16s ease, box-shadow .16s ease;
+      }
+      textarea { min-height: 68px; resize: vertical; line-height: 1.5; }
+      input:focus, select:focus, textarea:focus {
+        border-color: #8db3ff;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, .10);
+      }
+      .button {
+        min-height: 36px;
+        border: 1px solid transparent;
+        border-radius: 7px;
+        padding: 0 13px;
+        background: var(--navy);
+        color: #fff;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .button:hover { filter: brightness(.97); }
+      .button.primary { background: var(--blue); }
+      .button.primary:hover { background: var(--blue-dark); }
+      .button.subtle { border-color: var(--line); background: #f3f6fa; color: var(--navy); }
+      .button.ghost { border-color: var(--line); background: #fff; color: #334155; }
+      .button.danger { border-color: #ffd8dc; background: var(--red-bg); color: var(--red); }
+      .button.small { min-height: 30px; padding: 0 9px; border-radius: 6px; font-size: 12px; }
+      .create-button { width: 100%; min-height: 40px; margin-top: 14px; }
+      .message {
+        min-height: 38px;
+        margin-top: 10px;
+        padding: 9px 10px;
+        border-left: 3px solid #cbd5e1;
+        background: var(--panel-soft);
+        color: var(--muted);
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+      }
+      .message.ok { border-left-color: var(--green); background: var(--green-bg); color: #12663d; }
+      .message.bad { border-left-color: var(--red); background: var(--red-bg); color: #a51d2b; }
+      .code-output { margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+      .code-output[hidden] { display: none; }
+      .code-output .output-label { color: var(--muted); font-size: 12px; font-weight: 700; }
+      .code-output pre {
+        max-height: 180px;
+        margin: 8px 0;
+        overflow: auto;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #f8fafc;
+        color: var(--navy);
+        font-family: Consolas, monospace;
+        font-size: 14px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .row { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+      .workspace { min-width: 0; overflow: hidden; }
+      .toolbar {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        min-height: 68px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+      .toolbar-title { margin-right: 4px; font-size: 15px; font-weight: 800; }
+      .toolbar select { width: 188px; }
+      .toolbar .status-filter { width: 112px; }
+      .toolbar .search { flex: 1 1 210px; min-width: 180px; }
+      .toolbar-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-left: auto; }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        background: #f8fafc;
+        border-bottom: 1px solid var(--line);
+      }
+      .stat { min-width: 0; padding: 12px 14px; border-right: 1px solid var(--line); }
+      .stat:last-child { border-right: 0; }
+      .stat strong { display: block; font-size: 21px; line-height: 1.2; color: var(--navy); }
+      .stat span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+      .selection-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-height: 44px;
+        padding: 7px 16px;
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .selection-meta { color: var(--muted); font-size: 12px; }
+      .selection-meta strong { color: var(--blue); }
+      .table-wrap { width: 100%; overflow: auto; }
+      table { width: 100%; min-width: 930px; border-collapse: collapse; font-size: 12px; }
+      th, td { padding: 10px 8px; border-bottom: 1px solid var(--line-soft); text-align: left; vertical-align: top; }
+      th { background: #f7f9fc; color: #53647a; font-weight: 800; white-space: nowrap; }
+      tbody tr:hover { background: #fbfdff; }
+      tbody tr.expired { background: #fffafa; }
+      td:first-child, th:first-child { width: 34px; padding-left: 14px; }
+      td:last-child, th:last-child { padding-right: 14px; }
+      .license-code { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+      code {
+        display: inline-block;
+        padding: 3px 6px;
+        border-radius: 5px;
+        background: #edf2f7;
+        color: #172033;
+        font-family: Consolas, monospace;
+        font-size: 11px;
+      }
+      .link-button { border: 0; background: transparent; color: var(--blue); padding: 2px; font-size: 12px; font-weight: 700; }
+      .customer-name { font-size: 13px; font-weight: 800; color: #172033; }
+      .meta { margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+      .software-name { max-width: 150px; color: #27364e; font-weight: 700; line-height: 1.45; }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+      .badge.normal { background: var(--green-bg); color: var(--green); }
+      .badge.unactivated { background: #edf3ff; color: var(--blue-dark); }
+      .badge.expiring { background: var(--amber-bg); color: var(--amber); }
+      .badge.expired, .badge.disabled { background: var(--red-bg); color: var(--red); }
+      details { min-width: 94px; }
+      summary { cursor: pointer; color: #334155; font-weight: 700; }
+      .machine-binding { margin-top: 7px; padding-top: 7px; border-top: 1px dashed var(--line); }
+      .machine-binding code { max-width: 150px; overflow-wrap: anywhere; white-space: normal; }
+      .action-grid { display: flex; flex-wrap: wrap; gap: 5px; min-width: 118px; }
+      .empty { padding: 50px 20px; text-align: center; color: var(--muted); }
+      .footer-note { padding: 10px 16px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--line-soft); }
+
+      @media (max-width: 1100px) {
+        .layout { grid-template-columns: 1fr; }
+        .form-panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 18px; }
+        .form-panel .panel-heading, .form-panel .create-button, .form-panel .message, .form-panel .code-output { grid-column: 1 / -1; }
+      }
+      @media (max-width: 760px) {
+        .app { padding: 0 0 14px; }
+        .topbar, .panel { border-left: 0; border-right: 0; border-radius: 0; }
+        .topbar { align-items: flex-start; flex-direction: column; padding: 16px; }
+        .brand h1 { font-size: 21px; }
+        .auth { min-width: 0; justify-content: flex-start; flex-wrap: wrap; }
+        .auth input { flex: 1 1 180px; }
+        .layout { margin-top: 10px; gap: 10px; }
+        .form-panel { display: block; padding: 15px; }
+        .toolbar { align-items: stretch; padding: 12px; }
+        .toolbar-title { width: 100%; }
+        .toolbar select, .toolbar .status-filter { width: calc(50% - 4px); }
+        .toolbar-actions { width: 100%; margin-left: 0; }
+        .stats { grid-template-columns: repeat(2, 1fr); }
+        .stat { border-bottom: 1px solid var(--line); }
+        .selection-bar { align-items: flex-start; flex-direction: column; padding: 10px 12px; }
+      }
+      @media (max-width: 430px) {
+        .field-grid { grid-template-columns: 1fr; gap: 0; }
+        .toolbar select, .toolbar .status-filter { width: 100%; }
+        .toolbar-actions .button { flex: 1 1 calc(50% - 4px); }
+        .stats { grid-template-columns: 1fr 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <h1>传奇AI 授权后台</h1>
+          <p>授权码生成、机器绑定与客户授权管理</p>
+        </div>
+        <div class="auth">
+          <span class="login-state" id="loginState">未登录</span>
+          <input id="adminToken" type="password" autocomplete="current-password" placeholder="管理员口令" aria-label="管理员口令" />
+          <button class="button subtle" id="saveTokenBtn">登录</button>
+          <button class="button danger" id="logoutBtn">退出</button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <aside class="panel form-panel">
+          <div class="panel-heading">
+            <h2>操作面板</h2>
+            <p>填写客户信息并生成对应软件的授权码</p>
+          </div>
+
+          <label class="field">
+            <span>授权软件</span>
+            <select id="softwareInput">
+              <option value="comic-svip-pc">漫画SVIP-PC端</option>
+              <option value="comic-svip-pc-mobile">漫画SVIP-PC移动端</option>
+              <option value="huanhua-svip-mobile">幻画SVIP-移动端</option>
+              <option value="douyin-cover-pc">抖音封面截图-PC端</option>
+              <option value="dialogue-factory-mobile">对白工厂-移动端</option>
+              <option value="confession-mobile">表白-移动端</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>客户名称</span>
+            <input id="nameInput" placeholder="例如：张三 / XX客户" />
+          </label>
+
+          <div class="field-grid">
+            <label class="field"><span>微信</span><input id="wechatInput" placeholder="客户微信" /></label>
+            <label class="field"><span>手机</span><input id="phoneInput" placeholder="客户手机号" inputmode="tel" /></label>
+            <label class="field"><span>订单号</span><input id="orderInput" placeholder="订单或付款编号" /></label>
+            <label class="field"><span>销售</span><input id="salesInput" placeholder="负责人" /></label>
+          </div>
+
+          <div class="field-grid">
+            <label class="field">
+              <span>会员类型</span>
+              <select id="planInput">
+                <option value="month">月会员 30天</option>
+                <option value="quarter">季会员 90天</option>
+                <option value="year">年会员 365天</option>
+                <option value="custom">自定义天数</option>
+              </select>
+            </label>
+            <label class="field"><span>自定义天数</span><input id="daysInput" type="number" min="1" value="30" /></label>
+            <label class="field"><span>可绑定机器数</span><input id="maxMachinesInput" type="number" min="1" max="50" value="1" /></label>
+            <label class="field"><span>生成数量</span><input id="countInput" type="number" min="1" max="500" value="1" /></label>
+          </div>
+
+          <label class="field"><span>备注</span><textarea id="remarkInput" placeholder="付款信息、客户需求、售后记录等"></textarea></label>
+          <button class="button primary create-button" id="createBtn">生成授权码</button>
+          <div class="message" id="message">请输入管理员口令并登录。</div>
+
+          <div class="code-output" id="codeOutput" hidden>
+            <div class="output-label">本次生成</div>
+            <pre id="newCode"></pre>
+            <div class="row">
+              <button class="button ghost small" id="copyCodeBtn">复制授权码</button>
+              <button class="button ghost small" id="exportNewCodesBtn">导出本次</button>
+            </div>
+            <div class="meta" id="newCodeMeta"></div>
+          </div>
+        </aside>
+
+        <section class="panel workspace">
+          <div class="toolbar">
+            <div class="toolbar-title">授权码</div>
+            <select id="softwareFilter" aria-label="软件筛选">
+              <option value="all">全部软件</option>
+              <option value="comic-svip-pc">漫画SVIP-PC端</option>
+              <option value="comic-svip-pc-mobile">漫画SVIP-PC移动端</option>
+              <option value="huanhua-svip-mobile">幻画SVIP-移动端</option>
+              <option value="douyin-cover-pc">抖音封面截图-PC端</option>
+              <option value="dialogue-factory-mobile">对白工厂-移动端</option>
+              <option value="confession-mobile">表白-移动端</option>
+              <option value="comic-trial-pc">漫画试用版-PC端</option>
+            </select>
+            <select id="statusFilter" class="status-filter" aria-label="状态筛选">
+              <option value="all">全部状态</option>
+              <option value="normal">正常</option>
+              <option value="unactivated">未激活</option>
+              <option value="expiring">7天内到期</option>
+              <option value="expired">已过期</option>
+              <option value="disabled">已停用</option>
+            </select>
+            <input id="searchInput" class="search" placeholder="搜索授权码 / 客户 / 订单 / 备注" />
+            <div class="toolbar-actions">
+              <button class="button subtle" id="exportFilteredBtn">导出CSV</button>
+              <button class="button subtle" id="refreshBtn">刷新</button>
+            </div>
+          </div>
+
+          <div class="stats">
+            <div class="stat"><strong id="statTotal">0</strong><span>全部</span></div>
+            <div class="stat"><strong id="statNormal">0</strong><span>正常</span></div>
+            <div class="stat"><strong id="statUnactivated">0</strong><span>未激活</span></div>
+            <div class="stat"><strong id="statExpired">0</strong><span>已过期</span></div>
+            <div class="stat"><strong id="statExpiring">0</strong><span>7天内到期</span></div>
+          </div>
+
+          <div class="selection-bar">
+            <div class="selection-meta">当前显示 <strong id="visibleCount">0</strong> 条，已选 <strong id="selectedCount">0</strong> 条</div>
+            <div class="row">
+              <button class="button ghost small" id="exportSelectedBtn">导出选中</button>
+              <button class="button ghost small" id="batchEnableBtn">批量恢复</button>
+              <button class="button danger small" id="batchDisableBtn">批量停用</button>
+              <button class="button danger small" id="batchDeleteBtn">批量删除</button>
+            </div>
+          </div>
+
+          <div id="listWrap"><div class="empty">登录后自动加载授权码。</div></div>
+          <div class="footer-note">授权期限从首次激活开始计算；旧“客户版”授权码会自动归入“漫画SVIP-PC端”。</div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const $ = (selector) => document.querySelector(selector);
+      const API_BASE = "https://license.chuanqiai.xyz";
+      const tokenInput = $("#adminToken");
+      const SOFTWARE_NAMES = {
+        "comic-svip-pc": "漫画SVIP-PC端",
+        "comic-svip-pc-mobile": "漫画SVIP-PC移动端",
+        "huanhua-svip-mobile": "幻画SVIP-移动端",
+        "douyin-cover-pc": "抖音封面截图-PC端",
+        "dialogue-factory-mobile": "对白工厂-移动端",
+        "confession-mobile": "表白-移动端",
+        "comic-trial-pc": "漫画试用版-PC端",
+      };
+      let lastItems = [];
+      let lastCreatedItems = [];
+
+      tokenInput.value = localStorage.getItem("comicLicenseAdminToken") || "";
+
+      function token() { return tokenInput.value.trim(); }
+      function esc(value) {
+        return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+      }
+      function setMessage(text, kind = "") {
+        $("#message").textContent = text;
+        $("#message").className = "message" + (kind ? " " + kind : "");
+      }
+      function setLoginState(online) {
+        $("#loginState").textContent = online ? "已登录" : "未登录";
+        $("#loginState").className = "login-state" + (online ? " online" : "");
+      }
+      function formatTime(value) {
+        const date = new Date(value || "");
+        if (!Number.isFinite(date.getTime())) return "-";
+        return date.toLocaleString("zh-CN", { hour12: false });
+      }
+      function softwareText(item) {
+        return item.softwareName || SOFTWARE_NAMES[item.softwareId] || (item.edition === "trial" ? "漫画试用版-PC端" : "漫画SVIP-PC端");
+      }
+      function licenseState(item) {
+        if (item.disabled) return "disabled";
+        if (!item.activatedAt) return "unactivated";
+        const expires = Date.parse(item.expiresAt || "");
+        if (Number.isFinite(expires) && expires <= Date.now()) return "expired";
+        if (Number.isFinite(expires) && expires - Date.now() <= 7 * 24 * 60 * 60 * 1000) return "expiring";
+        return "normal";
+      }
+      function stateLabel(state) {
+        return { normal: "正常", unactivated: "未激活", expiring: "即将到期", expired: "已过期", disabled: "已停用" }[state] || "正常";
+      }
+      function expiryText(item) {
+        return !item.activatedAt && item.startsOnActivation ? "首次激活后计时" : formatTime(item.expiresAt);
+      }
+      function selectedCodes() {
+        return Array.from(document.querySelectorAll("[data-code-select]:checked")).map((input) => input.value);
+      }
+      function updateSelectedCount() {
+        $("#selectedCount").textContent = selectedCodes().length;
+      }
+      function filteredItems() {
+        const query = $("#searchInput").value.trim().toLowerCase();
+        const software = $("#softwareFilter").value;
+        const status = $("#statusFilter").value;
+        return lastItems.filter((item) => {
+          const searchable = [item.code, item.name, item.wechat, item.phone, item.orderNo, item.sales, item.remark, softwareText(item)].join(" ").toLowerCase();
+          const softwareMatches = software === "all" || item.softwareId === software;
+          const statusMatches = status === "all" || licenseState(item) === status;
+          return (!query || searchable.includes(query)) && softwareMatches && statusMatches;
+        });
+      }
+      function itemsByCodes(codes) {
+        const wanted = new Set(codes);
+        return lastItems.filter((item) => wanted.has(item.code));
+      }
+      function renderStats() {
+        const counts = { normal: 0, unactivated: 0, expiring: 0, expired: 0, disabled: 0 };
+        lastItems.forEach((item) => { counts[licenseState(item)] += 1; });
+        $("#statTotal").textContent = lastItems.length;
+        $("#statNormal").textContent = counts.normal;
+        $("#statUnactivated").textContent = counts.unactivated;
+        $("#statExpired").textContent = counts.expired;
+        $("#statExpiring").textContent = counts.expiring;
+      }
+      function csvCell(value) {
+        const text = String(value == null ? "" : value);
+        return '"' + text.replace(/"/g, '""') + '"';
+      }
+      function rowsForExport(items) {
+        const header = ["授权码", "客户", "微信", "手机", "订单号", "销售", "软件版本", "会员类型", "天数", "状态", "激活时间", "到期时间", "绑定机器", "可绑机器数", "迁移次数", "备注", "创建时间"];
+        const rows = items.map((item) => [
+          item.code, item.name || "", item.wechat || "", item.phone || "", item.orderNo || "", item.sales || "", softwareText(item),
+          item.plan || "", item.days || "", stateLabel(licenseState(item)), item.activatedAt ? formatTime(item.activatedAt) : "", expiryText(item),
+          item.usedMachines || 0, item.maxMachines || 1, (item.machineRebindCount || 0) + " / " + (item.maxMachineRebinds || 3), item.remark || "", formatTime(item.createdAt),
+        ]);
+        return [header].concat(rows).map((row) => row.map(csvCell).join(",")).join("\r\n");
+      }
+      function downloadCsv(items, filenamePrefix) {
+        if (!items.length) return setMessage("没有可导出的授权码", "bad");
+        const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "_");
+        const blob = new Blob(["\ufeff" + rowsForExport(items)], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filenamePrefix + "_" + stamp + ".csv";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        setMessage("已导出 " + items.length + " 个授权码", "ok");
+      }
+      function renderMachines(item) {
+        if (!item.machines || !item.machines.length) return '<span class="meta">未绑定</span>';
+        return '<details><summary>' + item.usedMachines + ' / ' + item.maxMachines + ' 台</summary>' + item.machines.map((machine) =>
+          '<div class="machine-binding"><code>' + esc(machine.machineCode || machine.machineCodeHash || "-") + '</code>' +
+          '<div class="meta">绑定：' + esc(formatTime(machine.boundAt)) + '</div>' +
+          '<button class="button danger small" data-unbind-code="' + esc(item.code) + '" data-unbind-hash="' + esc(machine.machineCodeHash || "") + '">解绑</button></div>'
+        ).join("") + '</details>';
+      }
+      function renderList() {
+        const items = filteredItems();
+        $("#visibleCount").textContent = items.length;
+        updateSelectedCount();
+        if (!items.length) {
+          $("#listWrap").innerHTML = '<div class="empty">没有符合当前筛选条件的授权码。</div>';
+          return;
+        }
+        $("#listWrap").innerHTML = '<div class="table-wrap"><table><thead><tr>' +
+          '<th><input id="selectAllCodes" type="checkbox" title="全选当前列表" /></th><th>授权码</th><th>客户</th><th>软件版本</th><th>状态</th><th>机器</th><th>到期</th><th>备注</th><th>操作</th>' +
+          '</tr></thead><tbody>' + items.map((item) => {
+            const state = licenseState(item);
+            const contact = [item.wechat ? "微信 " + item.wechat : "", item.phone ? "手机 " + item.phone : ""].filter(Boolean).join(" · ");
+            const note = [item.remark || "", item.orderNo ? "订单 " + item.orderNo : "", item.sales ? "销售 " + item.sales : ""].filter(Boolean).join(" · ");
+            return '<tr class="' + (state === "expired" ? "expired" : "") + '">' +
+              '<td><input data-code-select type="checkbox" value="' + esc(item.code) + '" /></td>' +
+              '<td><div class="license-code"><code>' + esc(item.code) + '</code><button class="link-button" data-copy-code="' + esc(item.code) + '">复制</button></div><div class="meta">' + esc(item.plan || "-") + ' / ' + esc(item.days || "-") + '天</div></td>' +
+              '<td><div class="customer-name">' + esc(item.name || "未填写") + '</div><div class="meta">' + esc(contact || "-") + '</div></td>' +
+              '<td><div class="software-name">' + esc(softwareText(item)) + '</div></td>' +
+              '<td><span class="badge ' + state + '">' + stateLabel(state) + '</span><div class="meta">激活 ' + esc(formatTime(item.activatedAt)) + '</div></td>' +
+              '<td>' + renderMachines(item) + '<div class="meta">迁移 ' + (item.machineRebindCount || 0) + ' / ' + (item.maxMachineRebinds || 3) + '</div></td>' +
+              '<td>' + esc(expiryText(item)) + '</td>' +
+              '<td><div class="meta">' + esc(note || "-") + '</div></td>' +
+              '<td><div class="action-grid">' + (item.disabled ?
+                '<button class="button ghost small" data-enable-code="' + esc(item.code) + '">恢复</button>' :
+                '<button class="button danger small" data-disable-code="' + esc(item.code) + '">停用</button>') +
+                '<button class="button danger small" data-delete-code="' + esc(item.code) + '" data-delete-name="' + esc(item.name || "") + '">删除</button></div></td>' +
+              '</tr>';
+          }).join("") + '</tbody></table></div>';
+        const selectAll = $("#selectAllCodes");
+        if (selectAll) selectAll.addEventListener("change", () => {
+          document.querySelectorAll("[data-code-select]").forEach((input) => { input.checked = selectAll.checked; });
+          updateSelectedCount();
+        });
+      }
+      async function adminApi(path, options = {}) {
+        const response = await fetch(API_BASE + path, {
+          ...options,
+          headers: { "Content-Type": "application/json", "X-Admin-Token": token(), ...(options.headers || {}) },
+        });
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok || json.ok === false) throw new Error(json.error || "请求失败");
+        return json;
+      }
+      async function refreshList() {
+        if (!token()) {
+          setLoginState(false);
+          return setMessage("请输入管理员口令并登录。", "bad");
+        }
+        try {
+          const data = await adminApi("/api/admin/licenses");
+          lastItems = data.items || [];
+          setLoginState(true);
+          renderStats();
+          renderList();
+          setMessage("数据已同步，共 " + lastItems.length + " 个授权码。", "ok");
+        } catch (error) {
+          setLoginState(false);
+          setMessage(error.message, "bad");
+          $("#listWrap").innerHTML = '<div class="empty">登录失败，请检查管理员口令。</div>';
+        }
+      }
+      async function batchSetDisabled(disabled) {
+        const codes = selectedCodes();
+        if (!codes.length) return setMessage("请先勾选授权码", "bad");
+        if (disabled && !confirm("确定批量停用选中的 " + codes.length + " 个授权码吗？")) return;
+        try {
+          const result = await adminApi("/api/admin/licenses/disabled", { method: "POST", body: JSON.stringify({ codes, disabled }) });
+          setMessage(result.message || "操作完成", "ok");
+          await refreshList();
+        } catch (error) { setMessage(error.message, "bad"); }
+      }
+
+      $("#saveTokenBtn").addEventListener("click", () => {
+        if (!token()) return setMessage("请输入管理员口令", "bad");
+        localStorage.setItem("comicLicenseAdminToken", token());
+        refreshList();
+      });
+      tokenInput.addEventListener("keydown", (event) => { if (event.key === "Enter") $("#saveTokenBtn").click(); });
+      $("#logoutBtn").addEventListener("click", () => {
+        localStorage.removeItem("comicLicenseAdminToken");
+        tokenInput.value = "";
+        lastItems = [];
+        setLoginState(false);
+        renderStats();
+        renderList();
+        setMessage("已退出登录。", "");
+      });
+      $("#refreshBtn").addEventListener("click", refreshList);
+      $("#searchInput").addEventListener("input", renderList);
+      $("#softwareFilter").addEventListener("change", renderList);
+      $("#statusFilter").addEventListener("change", renderList);
+      $("#listWrap").addEventListener("change", (event) => { if (event.target.matches("[data-code-select]")) updateSelectedCount(); });
+      $("#listWrap").addEventListener("click", async (event) => {
+        const copyButton = event.target.closest("[data-copy-code]");
+        const unbindButton = event.target.closest("[data-unbind-code]");
+        const disableButton = event.target.closest("[data-disable-code]");
+        const enableButton = event.target.closest("[data-enable-code]");
+        const deleteButton = event.target.closest("[data-delete-code]");
+        if (copyButton) {
+          await navigator.clipboard.writeText(copyButton.dataset.copyCode);
+          return setMessage("授权码已复制", "ok");
+        }
+        if (!unbindButton && !disableButton && !enableButton && !deleteButton) return;
+        try {
+          if (unbindButton) {
+            if (!confirm("确定解绑这台机器吗？解绑后授权码可以重新绑定。")) return;
+            await adminApi("/api/admin/licenses/unbind", { method: "POST", body: JSON.stringify({ code: unbindButton.dataset.unbindCode, machineCodeHash: unbindButton.dataset.unbindHash }) });
+          }
+          if (disableButton) {
+            if (!confirm("确定停用这个授权码吗？")) return;
+            await adminApi("/api/admin/licenses/disabled", { method: "POST", body: JSON.stringify({ code: disableButton.dataset.disableCode, disabled: true }) });
+          }
+          if (enableButton) await adminApi("/api/admin/licenses/disabled", { method: "POST", body: JSON.stringify({ code: enableButton.dataset.enableCode, disabled: false }) });
+          if (deleteButton) {
+            const label = deleteButton.dataset.deleteName ? deleteButton.dataset.deleteName + " / " + deleteButton.dataset.deleteCode : deleteButton.dataset.deleteCode;
+            if (!confirm("确定删除这个授权码吗？\n" + label + "\n删除后不可恢复。")) return;
+            await adminApi("/api/admin/licenses/delete", { method: "POST", body: JSON.stringify({ code: deleteButton.dataset.deleteCode }) });
+          }
+          await refreshList();
+        } catch (error) { setMessage(error.message, "bad"); }
+      });
+      $("#batchDisableBtn").addEventListener("click", () => batchSetDisabled(true));
+      $("#batchEnableBtn").addEventListener("click", () => batchSetDisabled(false));
+      $("#batchDeleteBtn").addEventListener("click", async () => {
+        const codes = selectedCodes();
+        if (!codes.length) return setMessage("请先勾选授权码", "bad");
+        if (!confirm("确定批量删除选中的 " + codes.length + " 个授权码吗？\n删除后不可恢复。")) return;
+        try {
+          await adminApi("/api/admin/licenses/delete", { method: "POST", body: JSON.stringify({ codes }) });
+          await refreshList();
+        } catch (error) { setMessage(error.message, "bad"); }
+      });
+      $("#exportSelectedBtn").addEventListener("click", () => downloadCsv(itemsByCodes(selectedCodes()), "license_selected"));
+      $("#exportFilteredBtn").addEventListener("click", () => downloadCsv(filteredItems(), "license_filtered"));
+      $("#createBtn").addEventListener("click", async () => {
+        const plan = $("#planInput").value;
+        const body = {
+          softwareId: $("#softwareInput").value,
+          name: $("#nameInput").value.trim(),
+          wechat: $("#wechatInput").value.trim(),
+          phone: $("#phoneInput").value.trim(),
+          orderNo: $("#orderInput").value.trim(),
+          sales: $("#salesInput").value.trim(),
+          remark: $("#remarkInput").value.trim(),
+          plan: plan === "custom" ? "" : plan,
+          days: plan === "custom" ? Number($("#daysInput").value || 30) : 0,
+          maxMachines: Number($("#maxMachinesInput").value || 1),
+          count: Number($("#countInput").value || 1),
+        };
+        try {
+          const result = await adminApi("/api/admin/licenses", { method: "POST", body: JSON.stringify(body) });
+          const items = result.items || (result.item ? [result.item] : []);
+          lastCreatedItems = items;
+          $("#codeOutput").hidden = false;
+          $("#newCode").textContent = items.map((item) => item.code).join("\n");
+          $("#newCodeMeta").textContent = SOFTWARE_NAMES[body.softwareId] + " · " + items.length + " 个 · 可绑定 " + body.maxMachines + " 台机器";
+          setMessage("已生成 " + items.length + " 个“" + SOFTWARE_NAMES[body.softwareId] + "”授权码。", "ok");
+          await refreshList();
+        } catch (error) { setMessage(error.message, "bad"); }
+      });
+      $("#copyCodeBtn").addEventListener("click", async () => {
+        await navigator.clipboard.writeText($("#newCode").textContent.trim());
+        setMessage("本次授权码已复制", "ok");
+      });
+      $("#exportNewCodesBtn").addEventListener("click", () => downloadCsv(lastCreatedItems, "license_new"));
+
+      if (token()) refreshList();
+    </script>
+  </body>
+</html>
