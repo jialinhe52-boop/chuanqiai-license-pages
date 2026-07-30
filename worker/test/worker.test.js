@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { stableStringify } from "../src/index.js";
+import worker, { normalizeSoftwareId, requestedCreatableSoftwareId, stableStringify } from "../src/index.js";
 
 function pem(label, bytes) {
   const body = Buffer.from(bytes).toString("base64").match(/.{1,64}/g).join("\n");
@@ -122,4 +122,62 @@ test("激活、验签、后台查询和停用使用同一套兼容接口", async
   }), env);
   assert.equal(rejected.status, 403);
   assert.equal((await rejected.json()).error, "activation code is disabled");
+});
+
+test("黑马-移动端使用独立的软件授权类型", async () => {
+  assert.equal(normalizeSoftwareId("heima-mobile"), "heima-mobile");
+  assert.equal(normalizeSoftwareId("黑马-移动端"), "heima-mobile");
+  assert.equal(normalizeSoftwareId("黑马移动端"), "heima-mobile");
+  assert.equal(normalizeSoftwareId("heima"), "heima-mobile");
+  assert.equal(normalizeSoftwareId("heima-android"), "heima-mobile");
+  assert.equal(normalizeSoftwareId("heima_mobile"), "heima-mobile");
+  assert.equal(normalizeSoftwareId("comic-svip-pc-mobile"), "comic-svip-pc-mobile");
+  assert.equal(normalizeSoftwareId("unknown-software"), "comic-svip-pc");
+
+  const code = "CG-HEIMA-0001";
+  const store = {
+    codes: {
+      [code]: {
+        productId: "legend-comic-generator",
+        edition: "customer",
+        softwareId: "heima-mobile",
+        packageScope: "legend-comic-generator:heima-mobile",
+        days: 30,
+        machines: {},
+        createdAt: "2026-07-30T00:00:00.000Z",
+      },
+    },
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ content: Buffer.from(JSON.stringify(store)).toString("base64"), sha: "sha-heima" });
+  try {
+    const response = await worker.fetch(new Request("https://license.example/api/admin/licenses", {
+      headers: { "X-Admin-Token": "admin-secret", Origin: "https://admin.chuanqiai.xyz" },
+    }), {
+      GITHUB_OWNER: "heima-owner",
+      GITHUB_REPO: "heima-data",
+      GITHUB_TOKEN: "test-token",
+      ADMIN_TOKEN: "admin-secret",
+      ALLOWED_ORIGINS: "https://admin.chuanqiai.xyz",
+      STORE_CACHE_SECONDS: "0",
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.items[0].softwareId, "heima-mobile");
+    assert.equal(body.items[0].softwareName, "黑马-移动端");
+    assert.equal(body.items[0].packageScope, "legend-comic-generator:heima-mobile");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("对白工厂-PC端使用独立授权类型，漫画PC移动端停止新增", () => {
+  assert.equal(normalizeSoftwareId("dialogue-factory-pc"), "dialogue-factory-pc");
+  assert.equal(normalizeSoftwareId("dialogue-factory-mobile"), "dialogue-factory-mobile");
+  assert.equal(requestedCreatableSoftwareId({ softwareId: "dialogue-factory-pc" }), "dialogue-factory-pc");
+  assert.equal(normalizeSoftwareId("comic-svip-pc-mobile"), "comic-svip-pc-mobile");
+  assert.throws(
+    () => requestedCreatableSoftwareId({ softwareId: "comic-svip-pc-mobile" }),
+    /已停止新增授权码/,
+  );
 });
