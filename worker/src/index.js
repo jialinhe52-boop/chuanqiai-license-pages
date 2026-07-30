@@ -9,11 +9,14 @@ const SOFTWARE_CATALOG = Object.freeze({
   "comic-svip-pc-mobile": "漫画SVIP-PC移动端",
   "huanhua-svip-mobile": "幻画SVIP-移动端",
   "douyin-cover-pc": "抖音封面截图-PC端",
+  "dialogue-factory-pc": "对白工厂-PC端",
   "dialogue-factory-mobile": "对白工厂-移动端",
   "confession-mobile": "表白-移动端",
+  "heima-mobile": "黑马-移动端",
   "comic-trial-pc": "漫画试用版-PC端",
 });
 const ALLOWED_SOFTWARE = new Set(Object.keys(SOFTWARE_CATALOG));
+const RETIRED_SOFTWARE = new Set(["comic-svip-pc-mobile"]);
 
 let memoryCache = null;
 let memoryCacheUntil = 0;
@@ -52,6 +55,11 @@ function normalizeSoftwareId(value, edition = "customer") {
     trial: "comic-trial-pc",
     "legend-comic-generator:customer": "comic-svip-pc",
     "legend-comic-generator:trial": "comic-trial-pc",
+    "黑马-移动端": "heima-mobile",
+    "黑马移动端": "heima-mobile",
+    heima: "heima-mobile",
+    "heima-android": "heima-mobile",
+    heima_mobile: "heima-mobile",
   };
   const normalized = aliases[raw] || raw;
   if (ALLOWED_SOFTWARE.has(normalized)) return normalized;
@@ -67,6 +75,14 @@ function requestedSoftwareId(body = {}) {
     body.softwareId || body.appId || body.productVariant || body.softwareVersion,
     requestedEdition(body),
   );
+}
+
+function requestedCreatableSoftwareId(body = {}) {
+  const softwareId = requestedSoftwareId(body);
+  if (RETIRED_SOFTWARE.has(softwareId)) {
+    throw new HttpError("漫画SVIP-PC移动端已停止新增授权码");
+  }
+  return softwareId;
 }
 
 function recordEdition(record = {}) {
@@ -477,6 +493,96 @@ async function activate(env, body, options = {}) {
   });
 }
 
+function legacyCardFailure(error) {
+  return {
+    code: Math.max(1, Number(error?.status || 1)),
+    message: String(error?.message || "license verification failed"),
+    result: null,
+  };
+}
+
+async function forwardLegacyCardRequest(env, pathname, body) {
+  const baseUrl = String(env.LEGACY_CARD_API_URL || "http://api.paojiaoyun.com").replace(/\/+$/, "");
+  const response = await fetch(`${baseUrl}${pathname}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify(body || {}),
+  });
+  const text = await response.text();
+  let result;
+  try {
+    result = JSON.parse(text);
+  } catch {
+    throw new HttpError("legacy license service returned an invalid response", 502);
+  }
+  if (!response.ok || !result || typeof result !== "object") {
+    throw new HttpError(result?.message || "legacy license service is unavailable", 502);
+  }
+  return result;
+}
+
+async function legacyCardLogin(env, body = {}) {
+  try {
+    const result = await activate(env, {
+      code: body.card,
+      productId: productId(env),
+      softwareId: "heima-mobile",
+      machineCode: String(body.device_id || "").trim(),
+      appVersion: "heima-android-1.3",
+    });
+    const payload = result.payload || {};
+    const expiresAt = String(payload.expiresAt || "");
+    const expires = Number.isFinite(Date.parse(expiresAt))
+      ? expiresAt.replace("T", " ").replace(/\.\d{3}Z$/, " UTC")
+      : expiresAt;
+    return {
+      code: 0,
+      message: "授权成功",
+      result: {
+        card_type: payload.softwareName || "黑马-移动端",
+        token: result.signature || payload.licenseId || "verified",
+        expires,
+        expires_ts: Math.floor(Date.parse(expiresAt) / 1000) || 0,
+        server_time: Math.floor(Date.now() / 1000),
+        config: "",
+      },
+    };
+  } catch (error) {
+    if (Number(error?.status) === 404 && normalizeCode(body.card)) {
+      try {
+        const legacyResult = await forwardLegacyCardRequest(env, "/v1/card/login", body);
+        if (Number(legacyResult.code) === 0 && legacyResult.result && typeof legacyResult.result === "object") {
+          legacyResult.result.card_type = "黑马-移动端";
+        }
+        return legacyResult;
+      } catch (legacyError) {
+        return legacyCardFailure(legacyError);
+      }
+    }
+    return legacyCardFailure(error);
+  }
+}
+
+async function legacyCardUnbind(env, body = {}) {
+  try {
+    const result = await unbindLicenseMachine(env, {
+      code: body.card,
+      machineCode: String(body.device_id || "").trim(),
+      reason: "heima-mobile self-service unbind",
+    });
+    return { code: 0, message: result.message || "解绑成功", result: result.message || "解绑成功" };
+  } catch (error) {
+    if (Number(error?.status) === 404 && normalizeCode(body.card)) {
+      try {
+        return await forwardLegacyCardRequest(env, "/v1/card/unbind_device", body);
+      } catch (legacyError) {
+        return legacyCardFailure(legacyError);
+      }
+    }
+    return legacyCardFailure(error);
+  }
+}
+
 function listLicenseCodes(env, store) {
   return Object.entries(store.codes || {}).map(([code, record]) => ({
     code,
@@ -520,7 +626,7 @@ function publicLicenseInfo(env, code, record) {
 
 function licenseRecord(env, body, days, plan, now) {
   const edition = requestedEdition(body);
-  const softwareId = requestedSoftwareId(body);
+  const softwareId = requestedCreatableSoftwareId(body);
   return {
     productId: String(body.productId || productId(env)),
     edition,
@@ -671,6 +777,11 @@ function allowedOrigins(env) {
   return new Set(String(env.ALLOWED_ORIGINS || "https://admin.chuanqiai.xyz").split(",").map((value) => value.trim()).filter(Boolean));
 }
 
+function isPublicCorsPath(request) {
+  const pathname = new URL(request.url).pathname;
+  return pathname === "/health" || pathname.startsWith("/api/license/");
+}
+
 function corsHeaders(request, env) {
   const origin = request.headers.get("Origin") || "";
   const headers = {
@@ -679,7 +790,11 @@ function corsHeaders(request, env) {
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };
-  if (origin && allowedOrigins(env).has(origin)) headers["Access-Control-Allow-Origin"] = origin;
+  if (isPublicCorsPath(request)) {
+    headers["Access-Control-Allow-Origin"] = "*";
+  } else if (origin && allowedOrigins(env).has(origin)) {
+    headers["Access-Control-Allow-Origin"] = origin;
+  }
   return headers;
 }
 
@@ -698,7 +813,9 @@ async function route(request, env) {
   const url = new URL(request.url);
   if (request.method === "OPTIONS") {
     const origin = request.headers.get("Origin") || "";
-    if (origin && !allowedOrigins(env).has(origin)) return json(request, env, { ok: false, error: "origin is not allowed" }, 403);
+    if (!isPublicCorsPath(request) && origin && !allowedOrigins(env).has(origin)) {
+      return json(request, env, { ok: false, error: "origin is not allowed" }, 403);
+    }
     return new Response(null, { status: 204, headers: corsHeaders(request, env) });
   }
   if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/admin" || url.pathname === "/admin/")) {
@@ -733,6 +850,12 @@ async function route(request, env) {
   if (request.method === "POST" && url.pathname === "/api/license/verify") {
     return json(request, env, await activate(env, await readJson(request), { verifyOnly: true }));
   }
+  if (request.method === "POST" && url.pathname === "/v1/card/login") {
+    return json(request, env, await legacyCardLogin(env, await readJson(request)));
+  }
+  if (request.method === "POST" && url.pathname === "/v1/card/unbind_device") {
+    return json(request, env, await legacyCardUnbind(env, await readJson(request)));
+  }
   return json(request, env, { ok: false, error: "not found" }, 404);
 }
 
@@ -751,6 +874,7 @@ export {
   normalizeCode,
   normalizeEdition,
   normalizeSoftwareId,
+  requestedCreatableSoftwareId,
   stableStringify,
   planDays,
   calculateExpiryFromActivation,
