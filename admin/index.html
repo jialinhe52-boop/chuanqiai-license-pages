@@ -38,6 +38,40 @@
       button, input, select, textarea { font: inherit; }
       button { cursor: pointer; }
       button:disabled { cursor: not-allowed; opacity: .55; }
+      [hidden] { display: none !important; }
+      .login-shell {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      .login-card {
+        width: min(460px, 100%);
+        padding: 34px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: 0 20px 52px rgba(15, 23, 42, .10);
+      }
+      .login-mark {
+        width: 54px;
+        height: 54px;
+        display: grid;
+        place-items: center;
+        margin-bottom: 20px;
+        border-radius: 8px;
+        background: var(--blue);
+        color: #fff;
+        font-size: 15px;
+        font-weight: 800;
+      }
+      .login-card h1 { margin: 0; font-size: 27px; line-height: 1.3; }
+      .login-card > p { margin: 8px 0 24px; color: var(--muted); line-height: 1.6; }
+      .login-field { display: grid; gap: 7px; }
+      .login-field span { color: #53647a; font-size: 12px; font-weight: 700; }
+      .login-submit { width: 100%; min-height: 42px; margin-top: 14px; }
+      .login-message { min-height: 22px; margin-top: 14px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+      .login-message.bad { color: var(--red); }
       .app { width: min(1500px, 100%); margin: 0 auto; padding: 10px 14px 20px; }
       .topbar {
         min-height: 96px;
@@ -254,6 +288,9 @@
         .selection-bar { align-items: flex-start; flex-direction: column; padding: 10px 12px; }
       }
       @media (max-width: 430px) {
+        .login-shell { padding: 14px; }
+        .login-card { padding: 26px 20px; }
+        .login-card h1 { font-size: 23px; }
         .field-grid { grid-template-columns: 1fr; gap: 0; }
         .toolbar select, .toolbar .status-filter { width: 100%; }
         .toolbar-actions .button { flex: 1 1 calc(50% - 4px); }
@@ -262,16 +299,28 @@
     </style>
   </head>
   <body>
-    <div class="app">
+    <div class="login-shell" id="loginView">
+      <section class="login-card" aria-labelledby="loginTitle">
+        <div class="login-mark">传奇</div>
+        <h1 id="loginTitle">传奇AI 授权后台</h1>
+        <p>请输入管理员密码后进入授权管理。</p>
+        <label class="login-field">
+          <span>管理密码</span>
+          <input id="adminToken" type="password" autocomplete="current-password" placeholder="输入后台管理密码" aria-label="管理密码" autofocus />
+        </label>
+        <button class="button primary login-submit" id="saveTokenBtn" type="button">进入后台</button>
+        <div class="login-message" id="loginMessage" role="status">请输入管理员密码。</div>
+      </section>
+    </div>
+
+    <div class="app" id="adminApp" hidden>
       <header class="topbar">
         <div class="brand">
           <h1>传奇AI 授权后台</h1>
           <p>授权码生成、机器绑定与客户授权管理</p>
         </div>
         <div class="auth">
-          <span class="login-state" id="loginState">未登录</span>
-          <input id="adminToken" type="password" autocomplete="current-password" placeholder="管理员口令" aria-label="管理员口令" />
-          <button class="button subtle" id="saveTokenBtn">登录</button>
+          <span class="login-state online" id="loginState">已登录</span>
           <button class="button danger" id="logoutBtn">退出</button>
         </div>
       </header>
@@ -407,10 +456,11 @@
       };
       let lastItems = [];
       let lastCreatedItems = [];
+      let activeAdminToken = "";
 
-      tokenInput.value = localStorage.getItem("comicLicenseAdminToken") || "";
+      localStorage.removeItem("comicLicenseAdminToken");
 
-      function token() { return tokenInput.value.trim(); }
+      function token() { return activeAdminToken; }
       function esc(value) {
         return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
       }
@@ -421,6 +471,31 @@
       function setLoginState(online) {
         $("#loginState").textContent = online ? "已登录" : "未登录";
         $("#loginState").className = "login-state" + (online ? " online" : "");
+      }
+      function setLoginMessage(text, kind = "") {
+        $("#loginMessage").textContent = text;
+        $("#loginMessage").className = "login-message" + (kind ? " " + kind : "");
+      }
+      function showAdmin(data) {
+        lastItems = data.items || [];
+        tokenInput.value = "";
+        $("#loginView").hidden = true;
+        $("#adminApp").hidden = false;
+        setLoginState(true);
+        renderStats();
+        renderList();
+        setMessage("数据已同步，共 " + lastItems.length + " 个授权码。", "ok");
+      }
+      function showLogin(message = "请输入管理员密码。", kind = "") {
+        activeAdminToken = "";
+        tokenInput.value = "";
+        lastItems = [];
+        lastCreatedItems = [];
+        $("#codeOutput").hidden = true;
+        $("#adminApp").hidden = true;
+        $("#loginView").hidden = false;
+        setLoginMessage(message, kind);
+        window.setTimeout(() => tokenInput.focus(), 0);
       }
       function formatTime(value) {
         const date = new Date(value || "");
@@ -555,20 +630,17 @@
       }
       async function refreshList() {
         if (!token()) {
-          setLoginState(false);
-          return setMessage("请输入管理员口令并登录。", "bad");
+          showLogin("登录已失效，请重新输入管理员密码。", "bad");
+          return;
         }
         try {
           const data = await adminApi("/api/admin/licenses");
           lastItems = data.items || [];
-          setLoginState(true);
           renderStats();
           renderList();
           setMessage("数据已同步，共 " + lastItems.length + " 个授权码。", "ok");
         } catch (error) {
-          setLoginState(false);
-          setMessage(error.message, "bad");
-          $("#listWrap").innerHTML = '<div class="empty">登录失败，请检查管理员口令。</div>';
+          showLogin("登录已失效，请重新输入管理员密码。", "bad");
         }
       }
       async function batchSetDisabled(disabled) {
@@ -582,20 +654,25 @@
         } catch (error) { setMessage(error.message, "bad"); }
       }
 
-      $("#saveTokenBtn").addEventListener("click", () => {
-        if (!token()) return setMessage("请输入管理员口令", "bad");
-        localStorage.setItem("comicLicenseAdminToken", token());
-        refreshList();
+      $("#saveTokenBtn").addEventListener("click", async () => {
+        const candidate = tokenInput.value.trim();
+        if (!candidate) return setLoginMessage("请输入管理员密码。", "bad");
+        activeAdminToken = candidate;
+        $("#saveTokenBtn").disabled = true;
+        setLoginMessage("正在验证密码...");
+        try {
+          showAdmin(await adminApi("/api/admin/licenses"));
+        } catch (error) {
+          activeAdminToken = "";
+          tokenInput.select();
+          setLoginMessage("密码错误，请重新输入。", "bad");
+        } finally {
+          $("#saveTokenBtn").disabled = false;
+        }
       });
       tokenInput.addEventListener("keydown", (event) => { if (event.key === "Enter") $("#saveTokenBtn").click(); });
       $("#logoutBtn").addEventListener("click", () => {
-        localStorage.removeItem("comicLicenseAdminToken");
-        tokenInput.value = "";
-        lastItems = [];
-        setLoginState(false);
-        renderStats();
-        renderList();
-        setMessage("已退出登录。", "");
+        showLogin("已退出，请重新输入管理员密码。");
       });
       $("#refreshBtn").addEventListener("click", refreshList);
       $("#searchInput").addEventListener("input", renderList);
@@ -676,7 +753,7 @@
       });
       $("#exportNewCodesBtn").addEventListener("click", () => downloadCsv(lastCreatedItems, "license_new"));
 
-      if (token()) refreshList();
+      showLogin();
     </script>
   </body>
 </html>
