@@ -9,6 +9,8 @@ const SOFTWARE_CATALOG = Object.freeze({
   "comic-svip-pc-mobile": "漫画SVIP-PC移动端",
   "huanhua-svip-mobile": "幻画SVIP-移动端",
   "douyin-cover-pc": "抖音封面截图-PC端",
+  "manju-doubao": "漫剧豆包版",
+  "manju-h3": "漫剧H3版",
   "dialogue-factory-pc": "对白工厂-PC端",
   "dialogue-factory-mobile": "对白工厂-移动端",
   "confession-mobile": "表白-移动端",
@@ -23,6 +25,7 @@ let memoryCacheUntil = 0;
 let memoryCacheKey = "";
 let signingKeyCache = null;
 let signingKeySource = "";
+let d1SchemaReady = false;
 
 class HttpError extends Error {
   constructor(message, status = 400, code = "") {
@@ -60,6 +63,12 @@ function normalizeSoftwareId(value, edition = "customer") {
     heima: "heima-mobile",
     "heima-android": "heima-mobile",
     heima_mobile: "heima-mobile",
+    "漫剧豆包版": "manju-doubao",
+    "漫剧豆包": "manju-doubao",
+    manju_doubao: "manju-doubao",
+    "漫剧h3版": "manju-h3",
+    "漫剧h3": "manju-h3",
+    manju_h3: "manju-h3",
   };
   const normalized = aliases[raw] || raw;
   if (ALLOWED_SOFTWARE.has(normalized)) return normalized;
@@ -229,7 +238,16 @@ function normalizeStore(data) {
   return data;
 }
 
-async function readStore(env, options = {}) {
+function d1Database(env) {
+  const database = env.LICENSE_DB;
+  return database && typeof database.prepare === "function" ? database : null;
+}
+
+function storageBackend(env) {
+  return d1Database(env) ? "cloudflare-d1" : "github-private-repository";
+}
+
+async function readGitHubStore(env, options = {}) {
   const config = githubConfig(env);
   const identity = cacheIdentity(config);
   if (!options.fresh && memoryCache && memoryCacheKey === identity && Date.now() < memoryCacheUntil) {
@@ -250,7 +268,7 @@ async function readStore(env, options = {}) {
   return { store, sha: file.sha };
 }
 
-async function writeStore(env, store, sha, message) {
+async function writeGitHubStore(env, store, sha, message) {
   const config = githubConfig(env);
   const response = await fetch(githubFileUrl(config), {
     method: "PUT",
@@ -278,6 +296,128 @@ async function writeStore(env, store, sha, message) {
   return nextSha;
 }
 
+async function ensureD1Schema(env) {
+  const database = d1Database(env);
+  if (!database) throw new HttpError("D1 storage is not configured", 503);
+  if (d1SchemaReady) return database;
+  await database.prepare(`
+    CREATE TABLE IF NOT EXISTS license_store (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      data TEXT NOT NULL,
+      version INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL,
+      imported_at TEXT NOT NULL
+    )
+  `).run();
+  d1SchemaReady = true;
+  return database;
+}
+
+function parseD1Row(row) {
+  if (!row) return null;
+  try {
+    return {
+      store: normalizeStore(JSON.parse(String(row.data || "{}"))),
+      sha: String(Math.max(1, Number(row.version || 1))),
+      metadata: {
+        updatedAt: String(row.updated_at || ""),
+        importedAt: String(row.imported_at || ""),
+      },
+    };
+  } catch {
+    throw new HttpError("D1 授权数据格式损坏", 500);
+  }
+}
+
+async function importGitHubStoreIntoD1(env, database) {
+  const imported = await readGitHubStore(env, { fresh: true });
+  const now = nowIso();
+  await database.prepare(`
+    INSERT OR IGNORE INTO license_store (id, data, version, updated_at, imported_at)
+    VALUES (1, ?, 1, ?, ?)
+  `).bind(JSON.stringify(imported.store), now, now).run();
+  const row = await database.prepare(
+    "SELECT data, version, updated_at, imported_at FROM license_store WHERE id = 1",
+  ).first();
+  const parsed = parseD1Row(row);
+  if (!parsed) throw new HttpError("D1 首次导入授权数据失败", 503);
+  return parsed;
+}
+
+async function readD1Store(env, options = {}) {
+  const identity = "d1:license_store:1";
+  if (!options.fresh && memoryCache && memoryCacheKey === identity && Date.now() < memoryCacheUntil) {
+    return {
+      store: structuredClone(memoryCache.store),
+      sha: memoryCache.sha,
+      metadata: { ...(memoryCache.metadata || {}) },
+    };
+  }
+  const database = await ensureD1Schema(env);
+  const row = await database.prepare(
+    "SELECT data, version, updated_at, imported_at FROM license_store WHERE id = 1",
+  ).first();
+  const current = parseD1Row(row) || await importGitHubStoreIntoD1(env, database);
+  memoryCache = {
+    store: structuredClone(current.store),
+    sha: current.sha,
+    metadata: { ...(current.metadata || {}) },
+  };
+  memoryCacheUntil = Date.now() + Math.max(1000, Number(env.STORE_CACHE_SECONDS || 10) * 1000);
+  memoryCacheKey = identity;
+  return current;
+}
+
+async function writeD1Store(env, store, sha) {
+  const database = await ensureD1Schema(env);
+  const expectedVersion = Math.max(1, Number(sha || 1));
+  const updatedAt = nowIso();
+  const result = await database.prepare(`
+    UPDATE license_store
+    SET data = ?, version = version + 1, updated_at = ?
+    WHERE id = 1 AND version = ?
+  `).bind(JSON.stringify(store), updatedAt, expectedVersion).run();
+  if (Number(result?.meta?.changes || 0) !== 1) {
+    throw new HttpError("D1 data changed concurrently", 409, "STORE_CONFLICT");
+  }
+  const nextVersion = String(expectedVersion + 1);
+  const identity = "d1:license_store:1";
+  const importedAt = String(memoryCache?.metadata?.importedAt || "");
+  memoryCache = {
+    store: structuredClone(store),
+    sha: nextVersion,
+    metadata: { updatedAt, importedAt },
+  };
+  memoryCacheUntil = Date.now() + Math.max(1000, Number(env.STORE_CACHE_SECONDS || 10) * 1000);
+  memoryCacheKey = identity;
+  return nextVersion;
+}
+
+async function readStore(env, options = {}) {
+  return d1Database(env) ? readD1Store(env, options) : readGitHubStore(env, options);
+}
+
+async function writeStore(env, store, sha, message) {
+  return d1Database(env) ? writeD1Store(env, store, sha) : writeGitHubStore(env, store, sha, message);
+}
+
+async function backupD1StoreToGitHub(env) {
+  if (!d1Database(env)) throw new HttpError("D1 storage is not configured", 503);
+  const d1Current = await readD1Store(env, { fresh: true });
+  const githubCurrent = await readGitHubStore(env, { fresh: true });
+  const licenseCount = Object.keys(d1Current.store.codes || {}).length;
+  if (JSON.stringify(d1Current.store) === JSON.stringify(githubCurrent.store)) {
+    return { ok: true, backedUp: false, licenseCount, message: "GitHub 备份已是最新" };
+  }
+  await writeGitHubStore(
+    env,
+    d1Current.store,
+    githubCurrent.sha,
+    `Backup D1 license store revision ${d1Current.sha}`,
+  );
+  return { ok: true, backedUp: true, licenseCount, revision: d1Current.sha, message: "D1 授权数据已备份到 GitHub" };
+}
+
 async function mutateStore(env, message, mutator) {
   let lastError;
   for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -290,10 +430,10 @@ async function mutateStore(env, message, mutator) {
       return outcome.value;
     } catch (error) {
       lastError = error;
-      if (error.code !== "GITHUB_CONFLICT") throw error;
+      if (error.code !== "GITHUB_CONFLICT" && error.code !== "STORE_CONFLICT") throw error;
     }
   }
-  throw lastError || new HttpError("GitHub 授权数据并发更新失败", 503);
+  throw lastError || new HttpError("授权数据并发更新失败", 503);
 }
 
 function planDays(plan) {
@@ -822,7 +962,23 @@ async function route(request, env) {
     return Response.redirect(String(env.ADMIN_SITE_URL || "https://admin.chuanqiai.xyz/admin/"), 302);
   }
   if (request.method === "GET" && url.pathname === "/health") {
-    return json(request, env, { ok: true, productId: productId(env), storage: "github-private-repository", time: nowIso() });
+    return json(request, env, { ok: true, productId: productId(env), storage: storageBackend(env), time: nowIso() });
+  }
+  if (request.method === "GET" && url.pathname === "/api/admin/storage-status") {
+    requireAdmin(request, env);
+    const current = await readStore(env, { fresh: true });
+    return json(request, env, {
+      ok: true,
+      backend: storageBackend(env),
+      licenseCount: Object.keys(current.store.codes || {}).length,
+      revision: current.sha,
+      updatedAt: current.metadata?.updatedAt || "",
+      importedAt: current.metadata?.importedAt || "",
+    });
+  }
+  if (request.method === "POST" && url.pathname === "/api/admin/storage-backup") {
+    requireAdmin(request, env);
+    return json(request, env, await backupD1StoreToGitHub(env));
   }
   if (request.method === "GET" && url.pathname === "/api/admin/licenses") {
     requireAdmin(request, env);
@@ -867,6 +1023,9 @@ export default {
       return json(request, env, { ok: false, error: error?.message || "internal error" }, error?.status || 400);
     }
   },
+  async scheduled(_event, env, ctx) {
+    ctx.waitUntil(backupD1StoreToGitHub(env));
+  },
 };
 
 export {
@@ -875,6 +1034,9 @@ export {
   normalizeEdition,
   normalizeSoftwareId,
   requestedCreatableSoftwareId,
+  storageBackend,
+  readStore,
+  backupD1StoreToGitHub,
   stableStringify,
   planDays,
   calculateExpiryFromActivation,

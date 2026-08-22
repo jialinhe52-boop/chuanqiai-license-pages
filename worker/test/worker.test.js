@@ -1,10 +1,41 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { normalizeSoftwareId, requestedCreatableSoftwareId, stableStringify } from "../src/index.js";
+import worker, { normalizeSoftwareId, readStore, requestedCreatableSoftwareId, stableStringify, storageBackend } from "../src/index.js";
 
 function pem(label, bytes) {
   const body = Buffer.from(bytes).toString("base64").match(/.{1,64}/g).join("\n");
   return `-----BEGIN ${label}-----\n${body}\n-----END ${label}-----\n`;
+}
+
+function createFakeD1() {
+  const state = { row: null };
+  return {
+    state,
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) { values = args; return this; },
+        async first() {
+          if (!sql.includes("SELECT data, version")) throw new Error(`unexpected D1 first: ${sql}`);
+          return state.row ? { ...state.row } : null;
+        },
+        async run() {
+          if (sql.includes("CREATE TABLE IF NOT EXISTS")) return { meta: { changes: 0 } };
+          if (sql.includes("INSERT OR IGNORE INTO license_store")) {
+            if (state.row) return { meta: { changes: 0 } };
+            state.row = { data: values[0], version: 1, updated_at: values[1], imported_at: values[2] };
+            return { meta: { changes: 1 } };
+          }
+          if (sql.includes("UPDATE license_store")) {
+            if (!state.row || Number(state.row.version) !== Number(values[2])) return { meta: { changes: 0 } };
+            state.row = { ...state.row, data: values[0], version: Number(state.row.version) + 1, updated_at: values[1] };
+            return { meta: { changes: 1 } };
+          }
+          throw new Error(`unexpected D1 run: ${sql}`);
+        },
+      };
+    },
+  };
 }
 
 test("激活、验签、后台查询和停用使用同一套兼容接口", async (context) => {
@@ -180,4 +211,79 @@ test("对白工厂-PC端使用独立授权类型，漫画PC移动端停止新增
     () => requestedCreatableSoftwareId({ softwareId: "comic-svip-pc-mobile" }),
     /已停止新增授权码/,
   );
+});
+
+test("漫剧豆包版和漫剧H3版使用互相隔离的授权类型", () => {
+  assert.equal(normalizeSoftwareId("manju-doubao"), "manju-doubao");
+  assert.equal(normalizeSoftwareId("漫剧豆包版"), "manju-doubao");
+  assert.equal(normalizeSoftwareId("漫剧豆包"), "manju-doubao");
+  assert.equal(normalizeSoftwareId("manju_doubao"), "manju-doubao");
+  assert.equal(normalizeSoftwareId("manju-h3"), "manju-h3");
+  assert.equal(normalizeSoftwareId("漫剧H3版"), "manju-h3");
+  assert.equal(normalizeSoftwareId("漫剧H3"), "manju-h3");
+  assert.equal(normalizeSoftwareId("manju_h3"), "manju-h3");
+  assert.notEqual(normalizeSoftwareId("manju-doubao"), normalizeSoftwareId("manju-h3"));
+  assert.equal(requestedCreatableSoftwareId({ softwareId: "manju-doubao" }), "manju-doubao");
+  assert.equal(requestedCreatableSoftwareId({ softwareId: "manju-h3" }), "manju-h3");
+});
+
+test("D1 首次从 GitHub 导入，后续读写不再请求 GitHub", async () => {
+  const originalFetch = globalThis.fetch;
+  const database = createFakeD1();
+  const importedStore = {
+    codes: {
+      "CG-D1-IMPORT": {
+        productId: "legend-comic-generator",
+        edition: "customer",
+        softwareId: "comic-svip-pc",
+        packageScope: "legend-comic-generator:comic-svip-pc",
+        days: 30,
+        machines: {},
+        createdAt: "2026-08-17T00:00:00.000Z",
+      },
+    },
+  };
+  let githubReads = 0;
+  globalThis.fetch = async () => {
+    githubReads += 1;
+    return Response.json({ content: Buffer.from(JSON.stringify(importedStore)).toString("base64"), sha: "github-sha" });
+  };
+  const env = {
+    LICENSE_DB: database,
+    GITHUB_OWNER: "owner",
+    GITHUB_REPO: "data",
+    GITHUB_TOKEN: "test-token",
+    ADMIN_TOKEN: "admin-secret",
+    PRODUCT_ID: "legend-comic-generator",
+    ALLOWED_ORIGINS: "https://admin.chuanqiai.xyz",
+    STORE_CACHE_SECONDS: "0",
+  };
+  try {
+    assert.equal(storageBackend(env), "cloudflare-d1");
+    const imported = await readStore(env, { fresh: true });
+    assert.equal(Object.keys(imported.store.codes).length, 1);
+    assert.equal(imported.sha, "1");
+    assert.equal(githubReads, 1);
+
+    const createdResponse = await worker.fetch(new Request("https://license.example/api/admin/licenses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Admin-Token": "admin-secret", Origin: "https://admin.chuanqiai.xyz" },
+      body: JSON.stringify({ softwareId: "dialogue-factory-pc", plan: "month", count: 1 }),
+    }), env);
+    assert.equal(createdResponse.status, 200);
+
+    const current = await readStore(env, { fresh: true });
+    assert.equal(Object.keys(current.store.codes).length, 2);
+    assert.equal(current.sha, "2");
+    assert.equal(githubReads, 1);
+
+    const statusResponse = await worker.fetch(new Request("https://license.example/api/admin/storage-status", {
+      headers: { "X-Admin-Token": "admin-secret", Origin: "https://admin.chuanqiai.xyz" },
+    }), env);
+    const status = await statusResponse.json();
+    assert.equal(status.backend, "cloudflare-d1");
+    assert.equal(status.licenseCount, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
