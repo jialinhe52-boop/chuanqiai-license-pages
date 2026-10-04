@@ -11,6 +11,8 @@ const SOFTWARE_CATALOG = Object.freeze({
   "douyin-cover-pc": "抖音封面截图-PC端",
   "manju-doubao": "漫剧豆包版",
   "manju-h3": "漫剧H3版",
+  "legend-manju-workbench": "传奇漫剧工作台",
+  "legend-canvas": "传奇画布",
   "dialogue-factory-pc": "对白工厂-PC端",
   "dialogue-factory-mobile": "对白工厂-移动端",
   "confession-mobile": "表白-移动端",
@@ -69,6 +71,13 @@ function normalizeSoftwareId(value, edition = "customer") {
     "漫剧h3版": "manju-h3",
     "漫剧h3": "manju-h3",
     manju_h3: "manju-h3",
+    "传奇漫剧工作台": "legend-manju-workbench",
+    "传奇漫剧工作台-pc端": "legend-manju-workbench",
+    "legend-manju": "legend-manju-workbench",
+    legend_manju_workbench: "legend-manju-workbench",
+    "传奇画布": "legend-canvas",
+    "legend-canvas-pc": "legend-canvas",
+    legend_canvas: "legend-canvas",
   };
   const normalized = aliases[raw] || raw;
   if (ALLOWED_SOFTWARE.has(normalized)) return normalized;

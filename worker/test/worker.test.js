@@ -227,6 +227,19 @@ test("漫剧豆包版和漫剧H3版使用互相隔离的授权类型", () => {
   assert.equal(requestedCreatableSoftwareId({ softwareId: "manju-h3" }), "manju-h3");
 });
 
+test("传奇漫剧工作台和传奇画布使用独立授权类型", () => {
+  assert.equal(normalizeSoftwareId("legend-manju-workbench"), "legend-manju-workbench");
+  assert.equal(normalizeSoftwareId("传奇漫剧工作台"), "legend-manju-workbench");
+  assert.equal(normalizeSoftwareId("传奇漫剧工作台-PC端"), "legend-manju-workbench");
+  assert.equal(normalizeSoftwareId("legend-manju"), "legend-manju-workbench");
+  assert.equal(normalizeSoftwareId("legend-canvas"), "legend-canvas");
+  assert.equal(normalizeSoftwareId("传奇画布"), "legend-canvas");
+  assert.equal(normalizeSoftwareId("legend-canvas-pc"), "legend-canvas");
+  assert.notEqual(normalizeSoftwareId("legend-manju-workbench"), normalizeSoftwareId("legend-canvas"));
+  assert.equal(requestedCreatableSoftwareId({ softwareId: "legend-manju-workbench" }), "legend-manju-workbench");
+  assert.equal(requestedCreatableSoftwareId({ softwareId: "legend-canvas" }), "legend-canvas");
+});
+
 test("D1 首次从 GitHub 导入，后续读写不再请求 GitHub", async () => {
   const originalFetch = globalThis.fetch;
   const database = createFakeD1();
