@@ -1,0 +1,21 @@
+name = "chuanqiai-license-api"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+
+[vars]
+GITHUB_OWNER = "jialinhe52-boop"
+GITHUB_REPO = "chuanqiai-license-data"
+GITHUB_BRANCH = "main"
+GITHUB_DATA_PATH = "data/licenses.json"
+PRODUCT_ID = "legend-comic-generator"
+ADMIN_SITE_URL = "https://admin.chuanqiai.xyz/admin/"
+ALLOWED_ORIGINS = "https://admin.chuanqiai.xyz,https://jialinhe52-boop.github.io"
+CHECK_INTERVAL_HOURS = "24"
+
+[triggers]
+crons = ["17 */6 * * *"]
+
+[[d1_databases]]
+binding = "LICENSE_DB"
+database_name = "chuanqiai-license"
+database_id = "ed77c7f2-5bac-466b-b73f-652ade23fbac"
