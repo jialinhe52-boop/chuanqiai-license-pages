@@ -13,6 +13,7 @@ const SOFTWARE_CATALOG = Object.freeze({
   "manju-h3": "漫剧H3版",
   "legend-manju-workbench": "传奇漫剧工作台",
   "legend-canvas": "传奇画布",
+  "legend-canvas-pro": "传奇画布PRO",
   "dialogue-factory-pc": "对白工厂-PC端",
   "dialogue-factory-mobile": "对白工厂-移动端",
   "confession-mobile": "表白-移动端",
@@ -78,6 +79,10 @@ function normalizeSoftwareId(value, edition = "customer") {
     "传奇画布": "legend-canvas",
     "legend-canvas-pc": "legend-canvas",
     legend_canvas: "legend-canvas",
+    "传奇画布pro": "legend-canvas-pro",
+    "传奇画布pro-pc端": "legend-canvas-pro",
+    "legend-canvas-pro-pc": "legend-canvas-pro",
+    legend_canvas_pro: "legend-canvas-pro",
   };
   const normalized = aliases[raw] || raw;
   if (ALLOWED_SOFTWARE.has(normalized)) return normalized;

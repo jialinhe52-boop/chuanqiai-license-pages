@@ -240,6 +240,16 @@ test("传奇漫剧工作台和传奇画布使用独立授权类型", () => {
   assert.equal(requestedCreatableSoftwareId({ softwareId: "legend-canvas" }), "legend-canvas");
 });
 
+test("传奇画布PRO使用独立授权类型", () => {
+  assert.equal(normalizeSoftwareId("legend-canvas-pro"), "legend-canvas-pro");
+  assert.equal(normalizeSoftwareId("传奇画布PRO"), "legend-canvas-pro");
+  assert.equal(normalizeSoftwareId("传奇画布PRO-PC端"), "legend-canvas-pro");
+  assert.equal(normalizeSoftwareId("legend-canvas-pro-pc"), "legend-canvas-pro");
+  assert.equal(normalizeSoftwareId("legend_canvas_pro"), "legend-canvas-pro");
+  assert.notEqual(normalizeSoftwareId("legend-canvas-pro"), normalizeSoftwareId("legend-canvas"));
+  assert.equal(requestedCreatableSoftwareId({ softwareId: "legend-canvas-pro" }), "legend-canvas-pro");
+});
+
 test("D1 首次从 GitHub 导入，后续读写不再请求 GitHub", async () => {
   const originalFetch = globalThis.fetch;
   const database = createFakeD1();
